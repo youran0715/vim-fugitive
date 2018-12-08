@@ -146,11 +146,15 @@ endfunction
 
 function! s:System(cmd) abort
   try
-    let cmd = trim(a:cmd)
-    if cmd =~ '^('
-        let cmd = strpart(cmd, 1, strlen(cmd) - 2)
+    if has("unix")
+        return system(a:cmd)
+    else
+        let cmd = trim(a:cmd)
+        if cmd =~ '^('
+            let cmd = strpart(cmd, 1, strlen(cmd) - 2)
+        endif
+        return vimproc#system(cmd)
     endif
-    return vimproc#system(cmd)
   catch /^Vim\%((\a\+)\)\=:E484:/
     let opts = ['shell', 'shellcmdflag', 'shellredir', 'shellquote', 'shellxquote', 'shellxescape', 'shellslash']
     call filter(opts, 'exists("+".v:val) && !empty(eval("&".v:val))')
