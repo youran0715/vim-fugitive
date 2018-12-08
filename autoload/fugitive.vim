@@ -146,7 +146,11 @@ endfunction
 
 function! s:System(cmd) abort
   try
-    return system(a:cmd)
+    let cmd = trim(a:cmd)
+    if cmd =~ '^('
+        let cmd = strpart(cmd, 1, strlen(cmd) - 2)
+    endif
+    return vimproc#system(cmd)
   catch /^Vim\%((\a\+)\)\=:E484:/
     let opts = ['shell', 'shellcmdflag', 'shellredir', 'shellquote', 'shellxquote', 'shellxescape', 'shellslash']
     call filter(opts, 'exists("+".v:val) && !empty(eval("&".v:val))')
@@ -168,7 +172,7 @@ endfunction
 let s:git_versions = {}
 function! fugitive#GitVersion(...) abort
   if !has_key(s:git_versions, g:fugitive_git_executable)
-    let s:git_versions[g:fugitive_git_executable] = matchstr(system(g:fugitive_git_executable.' --version'), "\\S\\+\\ze\n")
+    let s:git_versions[g:fugitive_git_executable] = matchstr(vimproc#system(g:fugitive_git_executable.' --version'), "\\S\\+\\ze\n")
   endif
   return s:git_versions[g:fugitive_git_executable]
 endfunction
@@ -307,7 +311,7 @@ function! fugitive#Head(...) abort
 endfunction
 
 function! fugitive#RevParse(rev, ...) abort
-  let hash = system(s:Prepare(a:0 ? a:1 : b:git_dir, 'rev-parse', '--verify', a:rev, '--'))[0:-2]
+  let hash = vimproc#system(s:Prepare(a:0 ? a:1 : b:git_dir, 'rev-parse', '--verify', a:rev, '--'))[0:-2]
   if !v:shell_error && hash =~# '^\x\{40\}$'
     return hash
   endif
@@ -316,7 +320,7 @@ endfunction
 
 function! fugitive#Config(name, ...) abort
   let cmd = fugitive#Prepare(a:0 ? a:1 : get(b:, 'git_dir', ''), '--no-literal-pathspecs', 'config', '--get', '--', a:name)
-  let out = matchstr(system(cmd), "[^\n]*")
+  let out = matchstr(vimproc#system(cmd), "[^\n]*")
   return v:shell_error ? '' : out
 endfunction
 
@@ -339,7 +343,7 @@ function! fugitive#RemoteUrl(...) abort
     return fugitive#Config('remote.' . remote . '.url')
   endif
   let cmd = s:Prepare(dir, 'remote', 'get-url', remote, '--')
-  let out = substitute(system(cmd), "\n$", '', '')
+  let out = substitute(vimproc#system(cmd), "\n$", '', '')
   return v:shell_error ? '' : out
 endfunction
 
@@ -676,7 +680,7 @@ function! fugitive#Find(object, ...) abort
         endif
       endif
       if commit !~# '^[0-9a-f]\{40\}$'
-        let commit = system(s:Prepare(dir, 'rev-parse', '--verify', commit, '--'))[0:-2]
+        let commit = vimproc#system(s:Prepare(dir, 'rev-parse', '--verify', commit, '--'))[0:-2]
         let commit = v:shell_error ? '' : commit
       endif
       if len(commit)
@@ -810,7 +814,7 @@ function! s:TreeInfo(dir, commit) abort
     let index = get(s:indexes, a:dir, [])
     let newftime = getftime(a:dir . '/index')
     if get(index, 0, -1) < newftime
-      let out = system(fugitive#Prepare(a:dir, 'ls-files', '--stage', '--'))
+      let out = vimproc#system(fugitive#Prepare(a:dir, 'ls-files', '--stage', '--'))
       let s:indexes[a:dir] = [newftime, {'0': {}, '1': {}, '2': {}, '3': {}}]
       if v:shell_error
         return [{}, -1]
@@ -831,13 +835,13 @@ function! s:TreeInfo(dir, commit) abort
       let s:trees[a:dir] = {}
     endif
     if !has_key(s:trees[a:dir], a:commit)
-      let ftime = +system(fugitive#Prepare(a:dir, 'log', '-1', '--pretty=format:%ct', a:commit, '--'))
+      let ftime = +vimproc#system(fugitive#Prepare(a:dir, 'log', '-1', '--pretty=format:%ct', a:commit, '--'))
       if v:shell_error
         let s:trees[a:dir][a:commit] = [{}, -1]
         return s:trees[a:dir][a:commit]
       endif
       let s:trees[a:dir][a:commit] = [{}, +ftime]
-      let out = system(fugitive#Prepare(a:dir, 'ls-tree', '-rtl', '--full-name', a:commit, '--'))
+      let out = vimproc#system(fugitive#Prepare(a:dir, 'ls-tree', '-rtl', '--full-name', a:commit, '--'))
       if v:shell_error
         return s:trees[a:dir][a:commit]
       endif
@@ -901,7 +905,7 @@ function! fugitive#getfsize(url) abort
   let entry = s:PathInfo(a:url)
   if entry[4] == -2 && entry[2] ==# 'blob' && len(entry[3])
     let dir = s:DirCommitFile(a:url)[0]
-    let size = +system(s:Prepare(dir, 'cat-file', '-s', entry[3]))
+    let size = +vimproc#system(s:Prepare(dir, 'cat-file', '-s', entry[3]))
     let entry[4] = v:shell_error ? -1 : size
   endif
   return entry[4]
@@ -954,7 +958,7 @@ function! fugitive#setfperm(url, perm) abort
       \ substitute(perm, 'x', '-', 'g') !=# substitute(a:perm, 'x', '-', 'g')
     return -2
   endif
-  call system(s:Prepare(dir, 'update-index', '--index-info'),
+  call vimproc#system(s:Prepare(dir, 'update-index', '--index-info'),
         \ (a:perm =~# 'x' ? '000755 ' : '000644 ') . entry[3] . ' ' . commit . "\t" . file[1:-1])
   return v:shell_error ? -1 : 0
 endfunction
@@ -1025,10 +1029,10 @@ function! fugitive#writefile(lines, url, ...) abort
       call writefile(fugitive#readfile(url, 'b'), temp, 'b')
     endif
     call call('writefile', [a:lines, temp] + a:000)
-    let hash = system(s:Prepare(dir, 'hash-object', '-w', temp))[0:-2]
+    let hash = vimproc#system(s:Prepare(dir, 'hash-object', '-w', temp))[0:-2]
     let mode = len(entry[1]) ? entry[1] : '100644'
     if !v:shell_error && hash =~# '^\x\{40\}$'
-      call system(s:Prepare(dir, 'update-index', '--index-info'),
+      call vimproc#system(s:Prepare(dir, 'update-index', '--index-info'),
             \ mode . ' ' . hash . ' ' . commit . "\t" . file[1:-1])
       if !v:shell_error
         return 0
@@ -1083,7 +1087,7 @@ function! fugitive#delete(url, ...) abort
   if entry[2] !=# 'blob'
     return -1
   endif
-  call system(s:Prepare(dir, 'update-index', '--index-info'),
+  call vimproc#system(s:Prepare(dir, 'update-index', '--index-info'),
         \ '000000 0000000000000000000000000000000000000000 ' . commit . "\t" . file[1:-1])
   return v:shell_error ? -1 : 0
 endfunction
@@ -1419,12 +1423,12 @@ function! fugitive#FileWriteCmd(...) abort
     endif
     silent execute "'[,']write !".s:Prepare(dir, 'hash-object', '-w', '--stdin', '--').' > '.tmp
     let sha1 = readfile(tmp)[0]
-    let old_mode = matchstr(system(s:Prepare(dir, 'ls-files', '--stage', '.' . file)), '^\d\+')
+    let old_mode = matchstr(vimproc#system(s:Prepare(dir, 'ls-files', '--stage', '.' . file)), '^\d\+')
     if empty(old_mode)
       let old_mode = executable(s:Tree(dir) . file) ? '100755' : '100644'
     endif
     let info = old_mode.' '.sha1.' '.commit."\t".file[1:-1]
-    let error = system(s:Prepare(dir, 'update-index', '--index-info'), info . "\n")
+    let error = vimproc#system(s:Prepare(dir, 'update-index', '--index-info'), info . "\n")
     if v:shell_error == 0
       setlocal nomodified
       if exists('#' . autype . 'WritePost')
@@ -1450,9 +1454,9 @@ function! fugitive#BufReadCmd(...) abort
     if rev =~# '^:\d$'
       let b:fugitive_type = 'stage'
     else
-      let b:fugitive_type = system(s:Prepare(dir, 'cat-file', '-t', rev))[0:-2]
+      let b:fugitive_type = vimproc#system(s:Prepare(dir, 'cat-file', '-t', rev))[0:-2]
       if v:shell_error && rev =~# '^:0'
-        let sha = system(s:Prepare(dir, 'write-tree', '--prefix=' . rev[3:-1]))[0:-2]
+        let sha = vimproc#system(s:Prepare(dir, 'write-tree', '--prefix=' . rev[3:-1]))[0:-2]
         let b:fugitive_type = 'tree'
       endif
       if v:shell_error
@@ -1489,7 +1493,7 @@ function! fugitive#BufReadCmd(...) abort
           call s:ReplaceCmd([dir, 'ls-tree', exists('sha') ? sha : rev])
         else
           if !exists('sha')
-            let sha = system(s:Prepare(dir, 'rev-parse', '--verify', rev, '--'))[0:-2]
+            let sha = vimproc#system(s:Prepare(dir, 'rev-parse', '--verify', rev, '--'))[0:-2]
           endif
           call s:ReplaceCmd([dir, 'show', '--no-color', sha])
         endif
@@ -1640,7 +1644,7 @@ endfunction
 let s:exec_paths = {}
 function! s:Subcommands() abort
   if !has_key(s:exec_paths, g:fugitive_git_executable)
-    let s:exec_paths[g:fugitive_git_executable] = s:sub(system(g:fugitive_git_executable.' --exec-path'),'\n$','')
+    let s:exec_paths[g:fugitive_git_executable] = s:sub(vimproc#system(g:fugitive_git_executable.' --exec-path'),'\n$','')
   endif
   let exec_path = s:exec_paths[g:fugitive_git_executable]
   return map(split(glob(exec_path.'/git-*'),"\n"),'s:sub(v:val[strlen(exec_path)+5 : -1],"\\.exe$","")')
@@ -3405,7 +3409,7 @@ function! s:Browse(bang,line1,count,...) abort
 
     if raw =~# '^https\=://' && s:executable('curl')
       if !has_key(s:redirects, raw)
-        let s:redirects[raw] = matchstr(system('curl -I ' .
+        let s:redirects[raw] = matchstr(vimproc#system('curl -I ' .
               \ s:shellesc(raw . '/info/refs?service=git-upload-pack')),
               \ 'Location: \zs\S\+\ze/info/refs?')
       endif
